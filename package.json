@@ -1,0 +1,38 @@
+{
+  "dependencies": {
+    "@vitejs/plugin-react-swc": "^4.2.2",
+    "autoprefixer": "^10.4.23",
+    "axios": "^1.13.2",
+    "framer-motion": "^12.25.0",
+    "lucide-react": "^0.562.0",
+    "next-themes": "^0.4.6",
+    "postcss": "^8.5.6",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^7.12.0",
+    "sonner": "^2.0.7",
+    "tailwindcss": "^4.1.18"
+  },
+  "name": "vigil",
+  "version": "1.0.0",
+  "description": "VIGIL is a real-time surveillance demo that simulates 12 cameras, rotates 5-second clips, and runs real PyTorch AI (MobileNet) on every rotation to flag violence. This single README replaces all other docs.",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.8",
+    "@types/react-dom": "^19.2.3",
+    "vite": "^7.3.1"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs"
+}
