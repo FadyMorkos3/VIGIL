@@ -18,13 +18,15 @@ The easiest way to start VIGIL is using the included PowerShell script, which ch
 .\start-vigil.ps1
 ```
 
-This will launch:
 1.  **Backend API**: `http://127.0.0.1:5000`
 2.  **Frontend Dashboard**: `http://localhost:3000`
 
+<<<<<<< HEAD
 ### 🌍 Deployment
 For detailed instructions on deploying to a production environment (including database and server setup), see the **[Deployment Guide](DEPLOYMENT.md)**.
 
+=======
+>>>>>>> 173417a5fa5a0e43b6fed1eed46b6081a2cfd5d3
 ---
 
 ## 🏗️ Architecture
@@ -38,7 +40,6 @@ For detailed instructions on deploying to a production environment (including da
 *   **Simulator** (`backend/services/camera_simulator.py`): Simulates live patterns by rotating video clips on a loop.
 
 ### Frontend (`/Vigil Surveillance App Design - Figma`)
-*   **Framework**: React (Vite).
 *   **Design**: Modern dark-mode UI with "glassmorphism" aesthetics.
 *   **Features**:
     *   Live camera grid.
@@ -58,7 +59,6 @@ You can tune the system's sensitivity in `backend/config.py`:
 | `DEFAULT_CAMERAS` | 12 Cams | List of active camera IDs. |
 | `MODEL_PATHS` | - | Paths to `.pt` and `.pth` model weights. |
 
-### Camera Types
 Cameras are assigned specific detection roles in `config.py`:
 *   **Violence Cameras**: `CAM-042`, `CAM-128`, `CAM-089`, `CAM-156`
 *   **Crash Cameras**: `CAM-283`, `CAM-074`, `CAM-195`, `CAM-267`
@@ -76,7 +76,6 @@ Check that the `Videos/` directory contains standard MP4 files. The system expec
 **"Module not found" errors:**
 Manually install backend dependencies:
 ```bash
-pip install -r requirements.txt
 ```
 
 ---
@@ -92,7 +91,10 @@ pip install -r requirements.txt
 ├── Vigil Surveillance.../    # React/Vite Frontend
 │   ├── src/                  # React components
 │   └── package.json          # Frontend dependencies
-├── Videos/                   # Source clips for simulation
 ├── start-vigil.ps1           # Verified startup script
 └── requirements.txt          # Python dependencies
 ```
+<<<<<<< HEAD
+=======
+
+>>>>>>> 173417a5fa5a0e43b6fed1eed46b6081a2cfd5d3
