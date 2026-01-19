@@ -31,9 +31,8 @@ For detailed instructions on deploying to a production environment (including da
 ### AI & Backend (`/backend`)
 *   **Framework**: Flask with Socket.IO for real-time updates.
 *   **Inference Engine** (`backend/ai/inference.py`):
-    *   **Violence Detection**: MobileNet-Clip based model.
-    *   **Crash Detection**: MobileNetV2-LSTM hybrid model.
-    *   **People Counting**: YOLOv8 model.
+    *   **Violence Detection**: MobileNet-Clip based model. Integrated with **YOLOv8 People Counting** for crowd analytics.
+    *   **Crash Detection**: MobileNetV2-LSTM hybrid model specialized for vehicle accidents.
 *   **Simulator** (`backend/services/camera_simulator.py`): Simulates live patterns by rotating video clips on a loop.
 
 ### Frontend (`/Vigil Surveillance App Design - Figma`)
@@ -57,8 +56,8 @@ You can tune the system's sensitivity in `backend/config.py`:
 | `MODEL_PATHS` | - | Paths to `.pt` and `.pth` model weights. |
 
 Cameras are assigned specific detection roles in `config.py`:
-*   **Violence Cameras**: `CAM-042`, `CAM-128`, `CAM-089`, `CAM-156`
-*   **Crash Cameras**: `CAM-283`, `CAM-074`, `CAM-195`, `CAM-267`
+*   **Violence Cameras** (`CAM-042`, `CAM-128`, etc.): Equipped with the **Violence Model** and **YOLO People Counter**. They process videos from the `violence` and `no_violence` folders.
+*   **Crash Cameras** (`CAM-283`, `CAM-074`, etc.): Equipped with the **Crash Model**. They process videos from the `crash` and `no_crash` folders.
 
 ---
 
