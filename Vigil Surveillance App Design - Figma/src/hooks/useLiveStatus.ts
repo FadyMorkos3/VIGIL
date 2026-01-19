@@ -37,11 +37,28 @@ export function useLiveStatus() {
       // Accept both {cameras: [...]} and plain array
       const cameras = Array.isArray(data) ? data : data.cameras;
       if (!Array.isArray(cameras)) throw new Error('Invalid cameras data');
-      const statusMap = new Map<string, CameraStatus>();
+      // Deep compare to avoid re-renders if data matches
+      const newMap = new Map();
       cameras.forEach((camera: CameraStatus) => {
-        statusMap.set(camera.camera_id, camera);
+        newMap.set(camera.camera_id, camera);
       });
-      setCameraStatuses(statusMap);
+
+      setCameraStatuses(prev => {
+        // Simple size check first
+        if (prev.size !== newMap.size) return newMap;
+
+        // Check content
+        let changed = false;
+        for (const [key, val] of newMap.entries()) {
+          const prevVal = prev.get(key);
+          if (JSON.stringify(prevVal) !== JSON.stringify(val)) {
+            changed = true;
+            break;
+          }
+        }
+        return changed ? newMap : prev;
+      });
+
       setSystemStatus('operational');
       setLastUpdate(new Date().toISOString());
     } catch (error) {
@@ -85,10 +102,11 @@ export function useLiveStatus() {
     if (!isPolling) return;
     fetchLiveStatus();
     fetchOfflineMode();
+    // Poll every 6 seconds (optimized from 3s)
     intervalRef.current = setInterval(() => {
       fetchLiveStatus();
       fetchOfflineMode();
-    }, 3000);
+    }, 6000);
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };

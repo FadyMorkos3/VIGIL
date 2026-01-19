@@ -7,6 +7,8 @@ Maintains a history of detections that can be queried via API.
 
 import time
 import threading
+import shutil
+import os
 from typing import List, Dict, Optional
 from pathlib import Path
 
@@ -22,6 +24,8 @@ _security_roster = [
     {"id": "SEC-101", "name": "Officer Malik", "status": "available"},
     {"id": "SEC-102", "name": "Officer Chen", "status": "available"},
     {"id": "SEC-103", "name": "Officer Rivera", "status": "available"},
+    {"id": "SEC-104", "name": "Chief Martinez", "status": "available"},
+    {"id": "SEC-105", "name": "Officer Smith", "status": "available"},
 ]
 
 
@@ -81,6 +85,14 @@ def add_incident(camera_id: str, event_type: str, confidence: float, video_path:
                      update_data.update(extra)
                 existing.update(update_data)
                 print(f"📝 Updated incident (merged): {existing['id']} - {event_type} (Status: {existing.get('status')})")
+                
+                # Emit update for merged incident so frontend sees confidence/severity changes
+                try:
+                    from backend.app import emit_incident_update
+                    emit_incident_update(existing)
+                except Exception as e:
+                    print(f"[WARN] Could not emit merged incident update: {e}")
+                    
                 return existing
 
         # Create incident record
@@ -157,13 +169,21 @@ def get_incident_by_id(incident_id: str) -> Optional[Dict]:
     return None
 
 
-def mark_incident_resolved(incident_id: str) -> bool:
-    """Mark an incident as resolved."""
+def mark_incident_resolved(incident_id: str, resolution_type: str = "resolved") -> bool:
+    """
+    Mark an incident as resolved with a specific resolution type.
+    resolution_type: 'resolved' (True Positive) or 'not_resolved' (False Positive / Unverified)
+    """
     with _lock:
         for incident in _incidents:
             if incident["id"] == incident_id:
                 incident["status"] = "resolved"
-                print(f"✅ Incident {incident_id} marked resolved")
+                incident["resolution_type"] = resolution_type
+                
+                # If it was assigned to someone, free them up (conceptually)
+                # In a real DB, we'd update the user's status key.
+                
+                print(f"✅ Incident {incident_id} marked {resolution_type}")
                 return True
     return False
 
@@ -223,8 +243,26 @@ def dispatch_incident(incident_id: str, security_id: str, assigned: bool = True)
 
 
 def list_security_roster() -> List[Dict]:
-    """Return demo security roster."""
-    return _security_roster
+    """
+    Return security roster with dynamic status based on active assignments.
+    """
+    # Create a copy of the roster to avoid mutating the original template if we were caching it
+    roster_snapshot = [officer.copy() for officer in _security_roster]
+    
+    with _lock:
+        # Find all currently assigned security IDs
+        busy_officers = set()
+        for inc in _incidents:
+            if inc["status"] in ["dispatched", "acknowledged"] and inc.get("assigned_security"):
+                 busy_officers.add(inc["assigned_security"])
+    
+    for officer in roster_snapshot:
+        if officer["id"] in busy_officers:
+            officer["status"] = "Busy"
+        else:
+            officer["status"] = "Available"
+            
+    return roster_snapshot
 
 
 def clear_incidents():
@@ -276,3 +314,79 @@ def get_incident_stats() -> Dict:
             "active": active,
             "resolved": resolved,
         }
+
+
+def save_incident_feedback(incident_id: str, feedback_type: str) -> bool:
+    """
+    Process user feedback (confirm/reject) and save data for retraining.
+    """
+    with _lock:
+        incident = None
+        for inc in _incidents:
+            if inc["id"] == incident_id:
+                incident = inc
+                break
+        
+        if not incident:
+            return False
+            
+        # Update status
+        incident["aiFeedback"] = True
+        incident["feedbackType"] = feedback_type
+        
+        if feedback_type == "reject":
+            incident["status"] = "resolved"
+            incident["resolution_type"] = "false_positive"
+            print(f"❌ Incident {incident_id} rejected (False Alarm)")
+        elif feedback_type == "confirm":
+             incident["status"] = "confirmed"
+             print(f"✅ Incident {incident_id} confirmed (True Positive)")
+
+        # Save for retraining
+        try:
+            _copy_for_retraining(incident, feedback_type)
+        except Exception as e:
+            print(f"[RETRAIN ERROR] Failed to save data: {e}")
+            
+        return True
+
+
+def _copy_for_retraining(incident: Dict, feedback_type: str):
+    """Copy video clip to retraining dataset."""
+    try:
+        video_path = incident.get("video_url") # relative path e.g. "Videos/..."
+        if not video_path:
+            return
+    
+        # Determine Source - handle potential path variations
+        # Assuming current working directory is project root
+        project_root = Path.cwd()
+        source_path = (project_root / video_path).resolve()
+            
+        if not source_path.exists():
+            # Try plain "Videos" prefix if path was stored without it or differently
+            if "Videos" not in str(video_path):
+                 source_path = (project_root / "Videos" / video_path).resolve()
+        
+        if not source_path.exists():
+            print(f"[RETRAIN INFO] Video source not found: {source_path}")
+            return
+    
+        # Determine Dest
+        # backend/data/retraining/false_positives OR true_positives
+        category = "false_positives" if feedback_type == "reject" else "true_positives"
+        dest_dir = project_root / "backend" / "data" / "retraining" / category
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Filename: [label]_[timestamp]_[orig_name]
+        label = incident.get("type", "unknown")
+        timestamp = int(incident.get("timestamp", 0))
+        dest_filename = f"{label}_{timestamp}_{source_path.name}"
+        dest_path = dest_dir / dest_filename
+        
+        shutil.copy2(source_path, dest_path)
+        print(f"💾 Saved for retraining: {dest_path}")
+    except Exception as e:
+        print(f"[RETRAIN INTERNAL ERROR] {e}")
+
+

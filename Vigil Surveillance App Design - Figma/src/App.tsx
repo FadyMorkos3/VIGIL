@@ -41,7 +41,7 @@ export default function App() {
       {!isAuthenticated || !currentRole ? (
         <>
           <LoginScreen onLogin={handleLogin} />
-          <Toaster position="top-right" />
+          <Toaster position="top-right" closeButton />
         </>
       ) : (
         <>
@@ -51,9 +51,8 @@ export default function App() {
             onNavigate={setCurrentView}
             currentView={currentView}
             userName={userName}
-            offlineMode={offlineMode}
           />
-          <Toaster position="top-right" className="mt-16" />
+          <Toaster position="top-right" className="mt-16" closeButton />
         </>
       )}
     </ThemeProvider>

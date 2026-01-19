@@ -147,6 +147,7 @@ class CameraSimulator:
                             # Incident creation logic
                             event = result.get('event', '').lower()
                             confidence = result.get('confidence', 0)
+                            print(f"   [DEBUG] {camera_id} Inference: Event='{event}', Conf={confidence:.2f}, Folder='{video_folder}'")
                             
                             # Enforce thresholds & Offline Mode
                             offline = get_offline_mode_state()
@@ -212,50 +213,13 @@ class CameraSimulator:
                         print(f"   ✓ {camera_id}: {result.get('event', 'unknown').upper()} (conf: {result.get('confidence', 0.0):.2%})")
                     except Exception as e:
                         print(f"❌ Error processing {camera_id}: {e}")
-                    time.sleep(self.rotation_interval)
+                    # Removed sleep from here to prevent serial blocking
                 except Exception as e:
-                    print(f"❌ Simulation loop error: {e}")
-                    time.sleep(1)
-                    self.inference_count += 1
-                    offline = get_offline_mode_state()
-                    # Store violence incidents with people count if available
-                    if not offline and result.get("event") == "violence":
-                        time_since_last = time.time() - self.last_violence_detection.get(camera_id, 0)
-                        if time_since_last >= 40 or camera_id not in self.last_violence_detection:
-                            conf = result.get("confidence", 0)
-                            extra = {}
-                            if people_result and people_result.get("count") is not None:
-                                extra["count"] = people_result["count"]
-                            print(f"   🚨 ALERT: {camera_id} detected violence (confidence: {conf:.2%})" + (f" with {people_result['count']} people" if people_result and people_result.get('count') is not None else ""))
-                            add_incident(
-                                camera_id=camera_id,
-                                event_type="violence",
-                                confidence=conf,
-                                video_path=rel_video_path,
-                                model=result.get("model", "unknown"),
-                                extra=extra if extra else None
-                            )
-                            self.last_violence_detection[camera_id] = time.time()
-                    # Store crash incidents with cooldown (unless offline)
-                    if not offline and result.get("event") == "traffic":
-                        time_since_last = time.time() - self.last_crash_detection.get(camera_id, 0)
-                        if time_since_last >= 40 or camera_id not in self.last_crash_detection:
-                            conf = result.get("confidence", 0)
-                            print(f"   🚗 ALERT: {camera_id} detected car crash (confidence: {conf:.2%})")
-                            add_incident(
-                                camera_id=camera_id,
-                                event_type="crash",
-                                confidence=conf,
-                                video_path=rel_video_path,
-                                model=result.get("model", "unknown")
-                            )
-                            self.last_crash_detection[camera_id] = time.time()
-                    event = result.get("event", "unknown")
-                    conf = result.get("confidence", 0.0)
-                    print(f"   ✓ {camera_id}: {event.upper()} (conf: {conf:.2%})")
-                except Exception as e:
-                    print(f"❌ Inference failed for {camera_id}: {e}")
-                    self._demo_inference(camera_id, video_path)
+                    print(f"❌ Error in camera loop for {camera_id}: {e}")
+
+            
+            # Sleep ONCE per full rotation of all cameras
+            time.sleep(self.rotation_interval)
 
 
     

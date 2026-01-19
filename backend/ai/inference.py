@@ -19,7 +19,7 @@ from typing import Dict
 
 print("[DEBUG] Importing violence, crash, and people counting models...")
 from backend.ai.violence_detector import detect_violence
-from backend.ai.crash_detector import detect_crash
+from backend.ai.accident_model import detect_crash
 from backend.ai.people_counter.yolov8 import detect_people_count
 print("[DEBUG] Model imports complete.")
 

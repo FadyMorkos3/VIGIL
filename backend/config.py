@@ -12,7 +12,7 @@ PEOPLE_COUNT_CAMERAS = VIOLENCE_CAMERAS  # Or specify a different list if needed
 # Externalized thresholds for tunability
 # HIGH ACCURACY MODE: Only trigger on very confident detections
 VIOLENCE_THRESHOLD = 0.70  # Higher confidence to reduce false positives
-ACCIDENT_THRESHOLD = 0.10  # Tuned for demo sensitivity (lowered from 0.60)
+ACCIDENT_THRESHOLD = 0.30  # Increased sensitivity for more crash detections
 SMOOTHING_WINDOW = 5
 
 # Default cameras (aligned with dashboard mock metadata)

@@ -19,7 +19,8 @@ except ImportError:
 # --- Flask App and In-Memory Stores ---
 app = Flask(__name__)
 CORS(app)
-socketio = SocketIO(app, cors_allowed_origins="*")
+# Force threading mode for Windows stability / dev server compatibility
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 PROJECT_ROOT = Path(__file__).parent.parent
 VIDEO_DIR = PROJECT_ROOT / 'Videos'
 
@@ -70,7 +71,7 @@ simulator = None
 def start_simulator():
     global simulator
     if simulator is None:
-        simulator = CameraSimulator(camera_ids=DEFAULT_CAMERAS, video_dir=VIDEO_DIR, rotation_interval=60, violence_probability=0.15)
+        simulator = CameraSimulator(camera_ids=DEFAULT_CAMERAS, video_dir=VIDEO_DIR, rotation_interval=5, violence_probability=0.15)
         simulator.start()
         print("[DEBUG] CameraSimulator started.")
         # Link simulator state to global camera_states
@@ -369,61 +370,130 @@ def api_get_incident(incident_id):
 # Resolve incident
 @app.route("/api/incidents/<incident_id>/resolve", methods=["POST"])
 def api_resolve_incident(incident_id):
-    incident = get_incident_by_id(incident_id)
-    success = mark_incident_resolved(incident_id)
+    data = request.get_json(silent=True) or {}
+    resolution_type = data.get("resolution_type", "resolved")
+    
+    # Validate resolution type
+    if resolution_type not in ["resolved", "not_resolved"]:
+        resolution_type = "resolved"
+
+    from backend.services.incident_storage import mark_incident_resolved, get_incident_by_id
+    success = mark_incident_resolved(incident_id, resolution_type)
     if success:
-        # Do NOT reset simulator video cache here.
-        # User resolved it, so we don't want RE-DETECTION of the same video file immediately.
-        # It will naturally be eligible again if it appears in a future rotation session (if cache cleared)
-        # or if it's a different video file.
+        # Emit update
+        updated_incident = get_incident_by_id(incident_id)
+        if updated_incident:
+            emit_incident_update(updated_incident)
+
         pass
     else:
         return jsonify({"error": "Incident not found"}), 404
     
-    return jsonify({"success": True, "id": incident_id})
+    return jsonify({"success": True, "id": incident_id, "resolution_type": resolution_type})
 
 # Acknowledge incident
 @app.route("/api/incidents/<incident_id>/ack", methods=["POST"])
 def api_ack_incident(incident_id):
-    data = request.get_json(silent=True) or {}
-    user_id = data.get("user_id", "unknown")
-    success = acknowledge_incident(incident_id, user_id)
-    if success:
-        # Do NOT reset simulator video cache here.
-        # User acknowledged it, so we consider this video "handled" for now.
-        pass
+    import traceback
+    try:
+        data = request.get_json(silent=True) or {}
+        user_id = data.get("user_id", "unknown")
         
-    if success:
-         return jsonify({"success": True, "id": incident_id, "ack_by": user_id})
-    else:
-        return jsonify({"error": "Incident not found"}), 404
+        from backend.services.incident_storage import acknowledge_incident, get_incident_by_id
+        success = acknowledge_incident(incident_id, user_id)
+        if success:
+            # Emit update
+            updated_incident = get_incident_by_id(incident_id)
+            if updated_incident:
+                emit_incident_update(updated_incident)
+            
+            # Do NOT reset simulator video cache here.
+            pass
+        if success:
+            return jsonify({"success": True, "id": incident_id, "ack_by": user_id})
+        else:
+            return jsonify({"error": "Incident not found"}), 404
+    except Exception as e:
+        print("[ACK-INCIDENT ERROR]", e)
+        traceback.print_exc()
+        return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
+
+
+# Submit Feedback (Confirm/Reject - False Alarm)
+@app.route("/api/incidents/<incident_id>/feedback", methods=["POST"])
+def api_incident_feedback(incident_id):
+    try:
+        data = request.get_json(silent=True) or {}
+        feedback_type = data.get("feedback_type") # 'confirm' or 'reject'
+        
+        if feedback_type not in ["confirm", "reject"]:
+             return jsonify({"error": "Invalid feedback type"}), 400
+
+        from backend.services.incident_storage import save_incident_feedback, get_incident_by_id
+        success = save_incident_feedback(incident_id, feedback_type)
+        
+        if success:
+             # Emit update
+            updated_incident = get_incident_by_id(incident_id)
+            if updated_incident:
+                emit_incident_update(updated_incident)
+            return jsonify({"success": True, "id": incident_id, "feedback": feedback_type})
+        else:
+            return jsonify({"error": "Incident not found"}), 404
+            
+    except Exception as e:
+        print(f"[FEEDBACK ERROR] {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+# Dispatch incident to security
+@app.route("/api/incidents/<incident_id>/dispatch", methods=["POST"])
+def api_dispatch_incident(incident_id):
+    import traceback
+    try:
+        data = request.get_json(silent=True) or {}
+        security_id = data.get("security_id", "unknown")
+        
+        from backend.services.incident_storage import dispatch_incident, get_incident_by_id
+        success = dispatch_incident(incident_id, security_id)
+        
+        if success:
+            # Emit update
+            updated_incident = get_incident_by_id(incident_id)
+            if updated_incident:
+                emit_incident_update(updated_incident)
+            return jsonify({"success": True, "id": incident_id, "dispatched_to": security_id})
+        else:
+            return jsonify({"error": "Incident not found"}), 404
+    except Exception as e:
+        print("[DISPATCH-INCIDENT ERROR]", e)
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
 
 # Acknowledge ALL incidents
 @app.route("/api/incidents/ack-all", methods=["POST"])
 def api_ack_all_incidents():
-    data = request.get_json(silent=True) or {}
-    user_id = data.get("user_id", "unknown")
-    count = ack_all_incidents(user_id)
-    
-    # Also reset simulator cache so videos can be re-detected
-    simulator = get_simulator()
-    if simulator:
-        simulator.clear_all_processed_videos()
+    import traceback
+    try:
+        data = request.get_json(silent=True) or {}
+        user_id = data.get("user_id", "unknown")
+        count = ack_all_incidents(user_id)
+        # Also reset simulator cache so videos can be re-detected
+        simulator = get_simulator()
+        if simulator:
+            simulator.clear_all_processed_videos()
         
-    return jsonify({"success": True, "count": count, "ack_by": user_id})
+        # Emit cleared event
+        socketio.emit('incidents_cleared', {'by': user_id})
+
+        return jsonify({"success": True, "count": count, "ack_by": user_id})
+    except Exception as e:
+        print("[ACK-ALL ERROR]", e)
+        traceback.print_exc()
+        return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
 
 # Dispatch security to incident
-@app.route("/api/incidents/<incident_id>/dispatch", methods=["POST"])
-def api_dispatch_incident(incident_id):
-    data = request.get_json(silent=True) or {}
-    security_id = data.get("security_id")
-    if not security_id:
-        return jsonify({"error": "security_id required"}), 400
-    success = dispatch_incident(incident_id, security_id)
-    if success:
-        return jsonify({"success": True, "id": incident_id, "security_id": security_id})
-    else:
-        return jsonify({"error": "Incident not found"}), 404
+
 
 # Proxy notifications to incidents feed (unified source)
 @app.route("/api/incidents", methods=["GET"])
@@ -452,6 +522,10 @@ def api_clear_incidents():
     simulator = get_simulator()
     if simulator:
         simulator.clear_all_processed_videos()
+    
+    # Emit cleared event
+    socketio.emit('incidents_cleared', {'by': 'system'})
+        
     return jsonify({"success": True, "message": "All incidents cleared and detection reset"})
 
 # Save report endpoint
@@ -577,107 +651,7 @@ FEEDBACK_LOG_FILE = PROJECT_ROOT / "backend" / "data" / "feedback_log.json"
 DATASET_DIR = PROJECT_ROOT / "backend" / "data" / "dataset"
 FEEDBACK_LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
 
-@app.route("/api/incidents/<incident_id>/feedback", methods=["POST"])
-def api_incident_feedback(incident_id):
-    """
-    Handle user feedback for an incident (Confirm/Reject).
-    Moves video to dataset folder and logs the event.
-    """
-    import shutil
-    try:
-        data = request.get_json()
-        feedback_type = data.get("feedback_type")  # 'confirm' or 'reject'
-        
-        if feedback_type not in ['confirm', 'reject']:
-            return jsonify({"error": "Invalid feedback type"}), 400
 
-        incident = get_incident_by_id(incident_id)
-        if not incident:
-            return jsonify({"error": "Incident not found"}), 404
-
-        # 1. Determine destination folder
-        if feedback_type == 'confirm':
-            dest_folder = DATASET_DIR / "verified_crash"
-            # Update incident status if needed
-            # mark_incident_verified(incident_id) 
-        else:
-            dest_folder = DATASET_DIR / "false_alarm"
-            # Auto-resolve/dismiss if rejected
-            mark_incident_resolved(incident_id)
-
-        dest_folder.mkdir(parents=True, exist_ok=True)
-
-        # 2. Locate Source Video
-        # stored video path is usually relative "camera_id/filename.mp4" or just "filename.mp4"
-        video_rel_path = incident.get('video') or incident.get('video_path')
-        if not video_rel_path:
-             return jsonify({"error": "No video associated with incident"}), 400
-             
-        # Resolve absolute path from VIDEO_DIR
-        # Clean path similar to serve_video logic
-        clean_path = video_rel_path.lstrip("/\\")
-        src_video_path = (VIDEO_DIR / clean_path).resolve()
-        
-        if not src_video_path.exists():
-             # Try fallback search if path logic is fuzzy
-             # (Simple fallback: look for filename in entire VIDEO_DIR)
-             found = list(VIDEO_DIR.rglob(src_video_path.name))
-             if found:
-                 src_video_path = found[0]
-             else:
-                 return jsonify({"error": f"Video file not found at {src_video_path}"}), 404
-
-        # 3. Copy Video to Dataset
-        # Use unique name: incident_id_filename.mp4
-        dest_filename = f"{incident_id}_{src_video_path.name}"
-        dest_path = dest_folder / dest_filename
-        
-        shutil.copy2(src_video_path, dest_path)
-        print(f"[FEEDBACK] Copied {src_video_path} to {dest_path}")
-
-        # 4. Log Feedback
-        log_entry = {
-            "id": str(uuid.uuid4()),
-            "incidentId": incident_id,
-            "type": incident.get("type"),
-            "userFeedback": "Correct" if feedback_type == 'confirm' else "False Positive",
-            "aiPrediction": "Car Crash" if incident.get("type") == "crash" else "Violence",
-            "confidence": incident.get("confidence", 0),
-            "confidenceLevel": "high" if incident.get("confidence", 0) > 85 else "medium",
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "model": "crash" if incident.get("type") == "crash" else "violence",
-            "usedInTraining": False,
-            "videoPath": str(dest_path.relative_to(PROJECT_ROOT))
-        }
-
-        # Append to log file
-        logs = []
-        if FEEDBACK_LOG_FILE.exists():
-            with open(FEEDBACK_LOG_FILE, "r") as f:
-                logs = json.load(f)
-        
-        logs.insert(0, log_entry) # Add to top
-        
-        with open(FEEDBACK_LOG_FILE, "w") as f:
-            json.dump(logs, f, indent=2)
-
-        return jsonify({"success": True, "message": "Feedback recorded", "entry": log_entry})
-
-    except Exception as e:
-        print(f"[FEEDBACK ERROR] {e}")
-        return jsonify({"error": str(e)}), 500
-
-@app.route("/api/retrain", methods=["POST"])
-def api_retrain():
-    """
-    Trigger the model retraining pipeline (Simulated).
-    """
-    try:
-        # retrain_model is defined at the top of app.py
-        result = retrain_model()
-        return jsonify(result)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
 
 @app.route("/api/feedback", methods=["GET"])
 def get_feedback_logs():

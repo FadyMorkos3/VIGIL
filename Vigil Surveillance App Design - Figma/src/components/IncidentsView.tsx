@@ -31,6 +31,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import Breadcrumb, { BreadcrumbItem } from './Breadcrumb';
 import { exportIncidentsToCSV, exportIncidentsToPDF } from '../utils/exportUtils';
 import { toast } from 'sonner';
+import { SECURITY_PERSONNEL } from '../data/roster';
 
 import type { Incident } from '../hooks/useRealtimeIncidents';
 
@@ -43,6 +44,9 @@ interface IncidentsViewProps {
   onDismissAll?: () => void;
   soundEnabled?: boolean;
   onToggleSound?: () => void;
+  title?: string;
+  onSelfDispatch?: (id: string) => void;
+  onDispatch?: (id: string, securityId: string) => void;
 }
 
 export function IncidentsView({
@@ -54,6 +58,9 @@ export function IncidentsView({
   onDismissAll,
   soundEnabled,
   onToggleSound,
+  title = "Incidents",
+  onSelfDispatch,
+  onDispatch,
 }: IncidentsViewProps) {
   const [filter, setFilter] = useState<'all' | 'active' | 'resolved'>('active');
   const [searchQuery, setSearchQuery] = useState('');
@@ -71,12 +78,7 @@ export function IncidentsView({
   const [dispatchStatus, setDispatchStatus] = useState<Record<string, { officerId: string, officerName: string, time: string }>>({});
 
   // Mock Security Personnel
-  const SECURITY_PERSONNEL = [
-    { id: 'SEC-001', name: 'John Doe', status: 'Available', location: 'Zone A' },
-    { id: 'SEC-002', name: 'Jane Smith', status: 'Available', location: 'Zone B' },
-    { id: 'SEC-003', name: 'Mike Ross', status: 'Busy', location: 'Zone C' },
-    { id: 'SEC-004', name: 'Sarah Connor', status: 'Available', location: 'Zone A' },
-  ];
+  // Imported from shared data
 
   const handleOpenDispatch = (incidentId: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -98,6 +100,9 @@ export function IncidentsView({
           time: new Date().toLocaleTimeString()
         }
       }));
+      // Call backend dispatch
+      onDispatch?.(incidentToDispatch, officer.id);
+
       toast.success(`Dispatched ${officer.name} to incident ${incidentToDispatch}`);
     }
     setDispatchModalOpen(false);
@@ -106,7 +111,16 @@ export function IncidentsView({
 
   const filteredIncidents = incidents.filter((inc) => {
     // Status Filter
-    if (filter !== 'all' && inc.status !== filter) return false;
+    if (filter === 'active') {
+      // Only show strictly active (unhandled) incidents. 
+      // Dispatched/Acknowledged go to "Active Dispatches" view.
+      if (inc.status !== 'active') return false;
+    } else if (filter === 'resolved') {
+      if (inc.status !== 'resolved') return false;
+    } else if (filter !== 'all' && inc.status !== filter) {
+      // Fallback for other potential statuses
+      return false;
+    }
 
     // Search Filter
     if (searchQuery) {
@@ -121,7 +135,7 @@ export function IncidentsView({
     if (severityFilter !== 'all' && inc.severity !== severityFilter) return false;
 
     return true;
-  });
+  }).slice(0, 50);
 
   const getTypeIcon = (type: string) => {
     if (type === 'violence') return Users;
@@ -223,7 +237,7 @@ export function IncidentsView({
       {/* Incidents Tab Header */}
       <div className="flex items-center gap-2">
         <AlertCircle className="w-7 h-7 text-blue-600 dark:text-blue-400" />
-        <h1 className="text-2xl font-bold tracking-tight">Incidents</h1>
+        <h1 className="text-2xl font-bold tracking-tight">{title}</h1>
       </div>
 
       {/* Header with Stats */}
@@ -233,7 +247,10 @@ export function IncidentsView({
             <div className="flex items-center justify-between">
               <div>
                 <p className={`text-sm ${vigilClasses.textMuted}`}>Active Incidents</p>
-                <p className="text-3xl text-red-400 mt-1">{activeCount}</p>
+                <div className="flex items-baseline gap-2 mt-1">
+                  <p className="text-3xl text-red-400">{Math.min(filteredIncidents.length, 50)}</p>
+                  <p className="text-sm text-muted-foreground">/ {activeCount} total</p>
+                </div>
               </div>
               <div className="w-12 h-12 bg-red-500/20 rounded-full flex items-center justify-center">
                 <AlertCircle className="w-6 h-6 text-red-400" />
@@ -290,7 +307,7 @@ export function IncidentsView({
                   onClick={() => setFilter('active')}
                   className={filter === 'active' ? 'bg-red-600 hover:bg-red-700' : ''}
                 >
-                  Active ({activeCount})
+                  Active ({activeCount > 50 ? '50+' : activeCount})
                 </Button>
                 <Button
                   variant={filter === 'resolved' ? 'default' : 'outline'}
@@ -298,7 +315,7 @@ export function IncidentsView({
                   onClick={() => setFilter('resolved')}
                   className={filter === 'resolved' ? 'bg-green-600 hover:bg-green-700' : ''}
                 >
-                  Resolved ({resolvedCount})
+                  Resolved Today ({resolvedCount})
                 </Button>
               </div>
 
@@ -329,7 +346,7 @@ export function IncidentsView({
                   <FileText className="w-4 h-4 mr-2" />
                   PDF
                 </Button>
-                {onDismissAll && (
+                {role === 'admin' && onDismissAll && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -422,8 +439,8 @@ export function IncidentsView({
               >
                 <Card
                   className={`${vigilClasses.card} border-l-4 ${incident.status === 'active'
-                    ? 'border-l-red-500 bg-red-950/10'
-                    : 'border-l-green-500 bg-green-950/10'
+                    ? 'border-l-red-500 bg-white dark:bg-[#13182b] shadow-lg shadow-red-500/5'
+                    : 'border-l-green-500 bg-white dark:bg-[#13182b] shadow-lg shadow-green-500/5'
                     }`}
                 >
                   <CardContent className="p-4">
@@ -469,10 +486,16 @@ export function IncidentsView({
                                 </>
                               )}
                             </Badge>
-                            {isDispatched && (
-                              <Badge className="bg-blue-600 text-white border-blue-500 flex items-center gap-1 shadow-lg animate-in fade-in zoom-in ml-2">
+                            {incident.status === 'dispatched' && (
+                              <Badge className="bg-blue-600 text-white border-blue-500 flex items-center gap-1 shadow-lg ml-2">
                                 <UserCheck className="w-3 h-3" />
-                                On Route
+                                {incident.assigned_security ? `On Route: ${incident.assigned_security}` : 'Dispatched'}
+                              </Badge>
+                            )}
+                            {incident.status === 'acknowledged' && (
+                              <Badge className="bg-purple-600 text-white border-purple-500 flex items-center gap-1 shadow-lg ml-2">
+                                <UserCheck className="w-3 h-3" />
+                                {incident.ack_by ? `Ack: ${incident.ack_by}` : 'Acknowledged'}
                               </Badge>
                             )}
                           </div>
@@ -521,7 +544,7 @@ export function IncidentsView({
                           <Maximize2 className="w-3 h-3 mr-1" />
                           Full Screen
                         </Button>
-                        {incident.status === 'active' && role !== 'security' && (
+                        {incident.status === 'active' && (
                           <>
                             <Button size="sm" variant="outline" className="border-green-600 text-green-400 hover:bg-green-950/30" onClick={() => onResolve?.(incident.id)}>
                               <CheckCircle className="w-3 h-3 mr-1" />
@@ -534,19 +557,38 @@ export function IncidentsView({
                           </>
                         )}
 
-                        {!isDispatched && incident.status === 'active' && (
-                          <Button
-                            size="sm"
-                            className="bg-blue-600 hover:bg-blue-700 text-white w-full"
-                            onClick={(e: React.MouseEvent) => handleOpenDispatch(incident.id, e)}
-                          >
-                            <UserPlus className="w-3.5 h-3.5 mr-2" />
-                            Dispatch
-                          </Button>
+                        {!isDispatched && incident.status === 'active' && (role === 'admin' || role === 'security' || role === 'officer') && (
+                          <div className="flex w-full gap-2">
+                            {role === 'security' && (
+                              <Button
+                                size="sm"
+                                className="flex-1 bg-purple-600 hover:bg-purple-700 text-white"
+                                onClick={() => onSelfDispatch?.(incident.id)}
+                              >
+                                <UserCheck className="w-3.5 h-3.5 mr-2" />
+                                Acknowledge
+                              </Button>
+                            )}
+                            {(role === 'admin' || role === 'officer') && (
+                              <Button
+                                size="sm"
+                                className="bg-blue-600 hover:bg-blue-700 text-white w-full"
+                                onClick={(e: React.MouseEvent) => handleOpenDispatch(incident.id, e)}
+                              >
+                                <UserPlus className="w-3.5 h-3.5 mr-2" />
+                                Dispatch
+                              </Button>
+                            )}
+                          </div>
                         )}
-                        {isDispatched && (
+                        {incident.status === 'dispatched' && incident.assigned_security && (
                           <div className="text-xs px-2 py-1 rounded w-full text-center font-medium text-black bg-blue-200 border border-blue-300 dark:text-blue-300 dark:bg-blue-950/50 dark:border-blue-500/30">
-                            Officer {dispatchInfo?.officerName}
+                            Officer {incident.assigned_security}
+                          </div>
+                        )}
+                        {incident.status === 'acknowledged' && incident.ack_by && (
+                          <div className="text-xs px-2 py-1 rounded w-full text-center font-medium text-black bg-purple-200 border border-purple-300 dark:text-purple-300 dark:bg-purple-950/50 dark:border-purple-500/30">
+                            Ack by {incident.ack_by}
                           </div>
                         )}
                       </div>

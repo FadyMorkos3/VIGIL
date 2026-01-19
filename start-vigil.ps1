@@ -37,7 +37,7 @@ Write-Host ""
 # Project paths
 $projectRoot = "S:\GRAD PROJECT\VIGIL"
 $backendPath = Join-Path $projectRoot "backend"
-$frontendPath = Join-Path $projectRoot "Vigil Surveillance App Design Final"
+$frontendPath = Join-Path $projectRoot "Vigil Surveillance App Design - Figma"
 
 # Check if paths exist
 if (-not (Test-Path $backendPath)) {

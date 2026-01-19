@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Card } from './ui/card';
-import { AnimatedBackgroundSimple } from './AnimatedBackgroundSimple';
+import { AnimatedBackgroundBeams } from './AnimatedBackgroundBeams';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import {
@@ -25,7 +25,9 @@ import {
   ChevronDown,
   Wifi,
   WifiOff,
-  CalendarDays
+  CalendarDays,
+  UserCheck,
+  Shield
 } from 'lucide-react';
 import { useTheme } from './ThemeProvider';
 import { useRealtimeIncidents } from '../hooks/useRealtimeIncidents';
@@ -34,6 +36,7 @@ import { vigilClasses } from './vigil-theme';
 import { VigilLogo } from './VigilLogo';
 import { DVRCameraGrid } from './DVRCameraGrid';
 import { IncidentsView } from './IncidentsView';
+import { DispatchesView } from './DispatchesView';
 import { AnalyticsView } from './AnalyticsView';
 import { MapView } from './MapView';
 import { CameraManagement } from './CameraManagement';
@@ -71,7 +74,8 @@ export function ModernSecurityLayout({
   console.log("ModernSecurityLayout role:", role);
 
   // Use live status polling hook (only for admin and officer)
-  const shouldShowLiveStatus = role === 'admin' || role === 'officer';
+  // Only Admin can see/toggle Live Status, Officer sees read-only via effectiveOffline logic
+  const shouldShowLiveStatus = role === 'admin';
 
   const {
     systemStatus,
@@ -86,6 +90,12 @@ export function ModernSecurityLayout({
 
   // Use realtime incidents hook
   const [pendingIncidentId, setPendingIncidentId] = useState<string | null>(null);
+
+  const handleIncidentReceived = useCallback((incidentId: string) => {
+    setPendingIncidentId(incidentId);
+    onNavigate('incidents');
+  }, [onNavigate]);
+
   const {
     activeIncidents,
     incidents,
@@ -97,10 +107,7 @@ export function ModernSecurityLayout({
     confirmIncident,
     rejectIncident,
     dispatchIncident,
-  } = useRealtimeIncidents((incidentId) => {
-    setPendingIncidentId(incidentId);
-    onNavigate('incidents');
-  }, offlineMode);
+  } = useRealtimeIncidents(handleIncidentReceived, offlineMode, userName);
 
   // When pendingIncidentId is set and incidents are loaded, open modal for that incident
   useEffect(() => {
@@ -166,7 +173,36 @@ export function ModernSecurityLayout({
   const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  const activeAlerts = activeIncidents.length;
+  // Only count truly "active" (unhandled) incidents for alerts
+  const unhandledIncidents = activeIncidents.filter((i: any) => i.status === 'active');
+  const activeAlerts = unhandledIncidents.length;
+
+  // Filter incidents for "My Dispatches" tab
+  // Split into Active (assigned, acknowledged, confirmed) vs Resolved (resolved by me)
+  const myActiveDispatches = incidents.filter((inc: any) =>
+    (inc.status === 'dispatched' || inc.status === 'acknowledged' || inc.status === 'confirmed') &&
+    (inc.dispatchedOfficerName === userName ||
+      inc.assigned_security === userName ||
+      inc.ack_by === userName ||
+      (inc.dispatched_to && inc.dispatched_to.includes(userName)))
+  );
+
+  const myResolvedDispatches = incidents.filter((inc: any) =>
+    inc.status === 'resolved' &&
+    (inc.dispatchedOfficerName === userName ||
+      inc.assigned_security === userName ||
+      inc.ack_by === userName)
+  );
+
+  // Filter incidents for "Active Dispatches" tab (Admin/Officer)
+  // Show ALL incidents that are dispatched, acknowledged OR confirmed (being worked on)
+  const activeDispatches = incidents.filter((inc: any) =>
+    inc.status === 'dispatched' || inc.status === 'acknowledged' || inc.status === 'confirmed'
+  );
+
+  const handleSelfDispatch = (id: string) => {
+    dispatchIncident(id, userName);
+  };
 
   const handleIncidentClick = (id: string) => {
     setSelectedIncidentId(id);
@@ -195,6 +231,7 @@ export function ModernSecurityLayout({
     const adminItems = [
       { id: 'live', label: 'Live Monitor', icon: Camera, badge: null },
       { id: 'incidents', label: 'Incidents', icon: AlertCircle, badge: activeAlerts },
+      { id: 'active-dispatches', label: 'Active Dispatches', icon: Shield, badge: activeDispatches.length },
       { id: 'map', label: 'Map View', icon: MapPin, badge: null },
       { id: 'analytics', label: 'Analytics', icon: BarChart3, badge: null },
       { id: 'cameras', label: 'Cameras', icon: Settings, badge: null },
@@ -209,6 +246,7 @@ export function ModernSecurityLayout({
     const officerItems = [
       { id: 'live', label: 'Live Monitor', icon: Camera, badge: null },
       { id: 'incidents', label: 'Active Incidents', icon: AlertCircle, badge: activeAlerts },
+      { id: 'active-dispatches', label: 'Active Dispatches', icon: Shield, badge: activeDispatches.length },
       { id: 'map', label: 'Map View', icon: MapPin, badge: null },
       { id: 'analytics', label: 'Analytics', icon: BarChart3, badge: null },
       { id: 'reports', label: 'Reports', icon: FileText, badge: null },
@@ -217,6 +255,7 @@ export function ModernSecurityLayout({
     const authorityItems = [
       { id: 'live', label: 'Live Monitor', icon: Camera, badge: null },
       { id: 'incidents', label: 'Incidents', icon: AlertCircle, badge: activeAlerts },
+      { id: 'my-dispatches', label: 'My Dispatches', icon: Shield, badge: myActiveDispatches.length },
       { id: 'map', label: 'Map View', icon: MapPin, badge: null },
     ];
 
@@ -241,8 +280,8 @@ export function ModernSecurityLayout({
   ];
 
   return (
-    <AnimatedBackgroundSimple mode={theme === 'dark' ? 'dark' : 'light'}>
-      <div className={`min-h-screen ${vigilClasses.bg} relative overflow-hidden`}>
+    <AnimatedBackgroundBeams mode={theme === 'dark' ? 'dark' : 'light'}>
+      <div className={`min-h-screen bg-transparent relative overflow-hidden`}>
         {/* Content Layer - needs z-index to be above animated background */}
         <div className="relative z-10">
           {/* Top Header - Professional Command Center Style */}
@@ -440,7 +479,7 @@ export function ModernSecurityLayout({
                       </div>
                       <div className={`${vigilClasses.card} p-4 flex flex-col gap-2`}>
                         <p className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Offline Mode</p>
-                        <span className={`text-lg font-bold ${offlineMode ? 'text-red-500' : 'text-green-600 dark:text-green-400'}`}>{offlineMode ? 'ON' : 'OFF'}</span>
+                        <span className={`text-lg font-bold ${effectiveOffline ? 'text-red-500' : 'text-green-600 dark:text-green-400'}`}>{effectiveOffline ? 'ON' : 'OFF'}</span>
                         <p className="text-xs text-gray-500 dark:text-gray-400">When ON, no incidents or notifications are created.</p>
                       </div>
                     </div>
@@ -496,9 +535,37 @@ export function ModernSecurityLayout({
                 onIncidentClick={handleIncidentClick}
                 onResolve={resolveIncident}
                 onDismiss={dismissIncident}
-                onDismissAll={dismissAllIncidents}
                 soundEnabled={soundEnabled}
                 onToggleSound={toggleSound}
+                onSelfDispatch={handleSelfDispatch}
+                onDispatch={dispatchIncident}
+                onDismissAll={dismissAllIncidents}
+              />
+            )}
+            {currentView === 'active-dispatches' && (
+              <DispatchesView
+                role={role}
+                title="Active Missions"
+                incidents={activeDispatches}
+                onResolve={resolveIncident}
+                onDismiss={dismissIncident}
+                onConfirm={confirmIncident}
+                onReject={rejectIncident}
+                onIncidentClick={handleIncidentClick}
+                onDismissAll={dismissAllIncidents}
+              />
+            )}
+            {currentView === 'my-dispatches' && (
+              <DispatchesView
+                role={role}
+                title="My Active Missions"
+                incidents={myActiveDispatches}
+                resolvedIncidents={myResolvedDispatches}
+                onResolve={resolveIncident}
+                onDismiss={dismissIncident}
+                onConfirm={confirmIncident}
+                onReject={rejectIncident}
+                onIncidentClick={handleIncidentClick}
               />
             )}
             {currentView === 'analytics' && <AnalyticsView />}
@@ -534,6 +601,6 @@ export function ModernSecurityLayout({
           <StatusWidget />
         </div >
       </div >
-    </AnimatedBackgroundSimple >
+    </AnimatedBackgroundBeams >
   );
 }

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from './ui/dialog';
 import { VideoModal } from './VideoModal';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
@@ -28,7 +28,11 @@ import {
   User,
   FileText,
   Image as ImageIcon,
+  Shield
 } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import { DialogFooter, DialogDescription } from './ui/dialog';
+import { SECURITY_PERSONNEL } from '../data/roster';
 import { motion } from 'motion/react';
 
 import type { Incident } from '../hooks/useRealtimeIncidents';
@@ -37,11 +41,12 @@ interface IncidentDetailModalProps {
   incident: Incident | null;
   isOpen: boolean;
   onClose: () => void;
-  onResolve?: (id: string) => void;
   onDismiss?: (id: string) => void;
   onConfirm?: (id: string) => void;
   onReject?: (id: string) => void;
   onDispatch?: (id: string, userId: string) => void;
+  // Update onResolve signature to allow type
+  onResolve?: (id: string, type?: 'resolved' | 'not_resolved') => void;
   userRole?: string;
   userName?: string;
 }
@@ -63,6 +68,17 @@ export function IncidentDetailModal({
   const [isMuted, setIsMuted] = useState(false);
   const [currentTime, setCurrentTime] = useState(0); // seconds
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
+  const [dispatchDialogOpen, setDispatchDialogOpen] = useState(false);
+  const [selectedOfficer, setSelectedOfficer] = useState('');
+
+  const handleConfirmDispatch = () => {
+    if (selectedOfficer && onDispatch) {
+      onDispatch(incident.id, selectedOfficer);
+      setDispatchDialogOpen(false);
+      onClose();
+      toast.success(`Dispatched to ${SECURITY_PERSONNEL.find(p => p.id === selectedOfficer)?.name || 'Officer'}`);
+    }
+  };
   const [notes, setNotes] = useState('');
   // Use actual video duration if available, fallback to 120s
   const totalDuration = 120;
@@ -217,29 +233,66 @@ export function IncidentDetailModal({
               </div>
             </div>
 
-            {incident.status === 'active' && (
+            {incident.status !== 'resolved' && (
               <div className="flex gap-3">
-                {/* DEBUG: {userRole} */}
+                {/* Security Role Actions */}
                 {String(userRole).toLowerCase() === 'security' ? (
-                  <Button
-                    onClick={() => {
-                      onDispatch?.(incident.id, userName);
-                      onClose();
-                    }}
-                    className="bg-blue-600 hover:bg-blue-700 px-6 py-3 h-auto"
-                  >
-                    <MapPin className="w-5 h-5 mr-2" />
-                    Acknowledge
-                  </Button>
-                ) : (
                   <>
+                    {(incident.status === 'active' && !incident.assigned_security) ? (
+                      <Button
+                        onClick={() => {
+                          onDispatch?.(incident.id, userName);
+                          onClose();
+                        }}
+                        className="bg-blue-600 hover:bg-blue-700 px-6 py-3 h-auto"
+                      >
+                        <MapPin className="w-5 h-5 mr-2" />
+                        Acknowledge
+                      </Button>
+                    ) : (
+                      // Only show resolution options if assigned to me or generally active
+                      // Assuming security only sees "My Dispatches" here where they are assigned
+                      <div className="flex gap-2">
+                        <Button
+                          onClick={() => {
+                            onResolve?.(incident.id, 'resolved' as any); // Passing extra arg, TS might complain if not typed, but JS works. 
+                            // Actually onResolve signature in props assumes (id: string). We need to update props interface or cast.
+                            // Let's rely on the fact that we updated the hook. But the prop type in this file is (id: string) => void.
+                            // We should update the interface too.
+                            onClose();
+                          }}
+                          className="bg-green-600 hover:bg-green-700 px-4 py-3 h-auto"
+                        >
+                          <CheckCircle className="w-5 h-5 mr-2" />
+                          [RESOLVED]
+                        </Button>
+                        <Button
+                          onClick={() => {
+                            // @ts-ignore
+                            onResolve?.(incident.id, 'not_resolved');
+                            onClose();
+                          }}
+                          className="bg-orange-600 hover:bg-orange-700 px-4 py-3 h-auto"
+                        >
+                          <AlertCircle className="w-5 h-5 mr-2" />
+                          [NOT RESOLVED]
+                        </Button>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  // Admin / Officer Actions
+                  <>
+                    {/* Admin can always resolve generally */}
                     <Button
                       onClick={() => onResolve?.(incident.id)}
-                      className="bg-green-600 hover:bg-green-700 px-6 py-3 h-auto"
+                      className="bg-green-600 hover:bg-green-700 px-6 py-3 h-auto hidden" // Hiding generic resolve for clarity if using specific flow
                     >
-                      <CheckCircle className="w-5 h-5 mr-2" />
                       Resolve
                     </Button>
+
+
+
                     <Button
                       onClick={() => onDismiss?.(incident.id)}
                       variant="outline"
