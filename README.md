@@ -21,12 +21,9 @@ The easiest way to start VIGIL is using the included PowerShell script, which ch
 1.  **Backend API**: `http://127.0.0.1:5000`
 2.  **Frontend Dashboard**: `http://localhost:3000`
 
-<<<<<<< HEAD
 ### 🌍 Deployment
 For detailed instructions on deploying to a production environment (including database and server setup), see the **[Deployment Guide](DEPLOYMENT.md)**.
 
-=======
->>>>>>> 173417a5fa5a0e43b6fed1eed46b6081a2cfd5d3
 ---
 
 ## 🏗️ Architecture
@@ -55,7 +52,7 @@ You can tune the system's sensitivity in `backend/config.py`:
 | Setting | Default | Description |
 |---------|---------|-------------|
 | `VIOLENCE_THRESHOLD` | 0.70 | Confidence required to flag violence. High precision mode. |
-| `ACCIDENT_THRESHOLD` | 0.10 | Confidence required to flag crashes. Tuned for demo sensitivity. |
+| `ACCIDENT_THRESHOLD` | 0.30 | Confidence required to flag crashes. Tuned for demo sensitivity. |
 | `DEFAULT_CAMERAS` | 12 Cams | List of active camera IDs. |
 | `MODEL_PATHS` | - | Paths to `.pt` and `.pth` model weights. |
 
@@ -76,6 +73,7 @@ Check that the `Videos/` directory contains standard MP4 files. The system expec
 **"Module not found" errors:**
 Manually install backend dependencies:
 ```bash
+pip install -r requirements.txt
 ```
 
 ---
@@ -94,7 +92,4 @@ Manually install backend dependencies:
 ├── start-vigil.ps1           # Verified startup script
 └── requirements.txt          # Python dependencies
 ```
-<<<<<<< HEAD
-=======
 
->>>>>>> 173417a5fa5a0e43b6fed1eed46b6081a2cfd5d3
